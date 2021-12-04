@@ -48,7 +48,9 @@ module GoodJob # :nodoc:
           job_performer,
           max_threads: max_threads,
           max_cache: configuration.max_cache,
-          warm_cache_on_initialize: warm_cache_on_initialize
+          warm_cache_on_initialize: warm_cache_on_initialize,
+          cleanup_interval_seconds: configuration.cleanup_interval_seconds,
+          cleanup_interval_jobs: configuration.cleanup_interval_jobs
         )
       end
 
@@ -63,7 +65,9 @@ module GoodJob # :nodoc:
     # @param max_threads [Numeric, nil] number of seconds between polls for jobs
     # @param max_cache [Numeric, nil] maximum number of scheduled jobs to cache in memory
     # @param warm_cache_on_initialize [Boolean] whether to warm the cache immediately, or manually by calling +warm_cache+
-    def initialize(performer, max_threads: nil, max_cache: nil, warm_cache_on_initialize: false)
+    # @param cleanup_interval_seconds [Numeric, nil] number of seconds between cleaning up job records
+    # @param cleanup_interval_jobs [Numeric, nil] number of executed jobs between cleaning up job records
+    def initialize(performer, max_threads: nil, max_cache: nil, warm_cache_on_initialize: false, cleanup_interval_seconds: nil, cleanup_interval_jobs: nil)
       raise ArgumentError, "Performer argument must implement #next" unless performer.respond_to?(:next)
 
       self.class.instances << self
@@ -77,6 +81,11 @@ module GoodJob # :nodoc:
         @executor_options[:max_queue] = max_threads
       end
       @executor_options[:name] = "GoodJob::Scheduler(queues=#{@performer.name} max_threads=#{@executor_options[:max_threads]})"
+
+      @cleanup_interval_seconds = cleanup_interval_seconds
+      @cleanup_interval_jobs = cleanup_interval_jobs
+      @cleanup_jobs = 0 # number of jobs executed since last cleanup
+      @cleanup_at = Time.current # time of last cleanup
 
       create_executor
       warm_cache if warm_cache_on_initialize
@@ -172,7 +181,14 @@ module GoodJob # :nodoc:
       GoodJob._on_thread_error(error) if error
 
       instrument("finished_job_task", { result: output, error: thread_error, time: time })
-      create_task if output
+      return unless output
+
+      @cleanup_jobs += 1
+      if cleanup?
+        cleanup
+      else
+        create_task
+      end
     end
 
     # Information about the Scheduler
@@ -210,7 +226,26 @@ module GoodJob # :nodoc:
         create_task # If cache-warming exhausts the threads, ensure there isn't an executable task remaining
       end
       future.add_observer(observer, :call)
+      future.execute
+    end
 
+    # Preload existing runnable and future-scheduled jobs
+    # @return [void]
+    def cleanup
+      @cleanup_jobs = 0
+      @cleanup_at = Time.current
+
+      future = Concurrent::Future.new(args: [self, @performer], executor: executor) do |_thr_scheduler, thr_performer|
+        Rails.application.executor.wrap do
+          thr_performer.cleanup
+        end
+      end
+
+      observer = lambda do |_time, _output, thread_error|
+        GoodJob._on_thread_error(thread_error) if thread_error
+        create_task
+      end
+      future.add_observer(observer, :call)
       future.execute
     end
 
@@ -258,6 +293,11 @@ module GoodJob # :nodoc:
 
     def remaining_cache_count
       @max_cache - cache_count
+    end
+
+    def cleanup?
+      (@cleanup_interval_jobs && @cleanup_jobs > @cleanup_interval_jobs) ||
+        (@cleanup_interval_seconds && @cleanup_at < Time.current - @cleanup_interval_seconds)
     end
 
     # Custom sub-class of +Concurrent::ThreadPoolExecutor+ to add additional worker status.
