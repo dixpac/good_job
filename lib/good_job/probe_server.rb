@@ -2,7 +2,7 @@
 
 module GoodJob
   class ProbeServer
-    RACK_SERVER = 'webrick'
+    RACK_SERVER = 'httpserver'
 
     def self.task_observer(time, output, thread_error) # rubocop:disable Lint/UnusedMethodArgument
       return if thread_error.is_a? Concurrent::CancelledOperationError
@@ -28,7 +28,7 @@ module GoodJob
     end
 
     def stop
-      @handler&.shutdown
+      @handler.stop if @handler
       @future&.value # wait for Future to exit
     end
 
