@@ -1,5 +1,4 @@
 require 'socket'
-require 'rack'
 
 module GoodJob
   class HttpServer
@@ -7,14 +6,6 @@ module GoodJob
       @instance = new(app, options)
       @instance.start
       @instance
-    end
-
-    def self.running?
-      @instance&.running?
-    end
-
-    def self.stop
-      @instance&.stop
     end
 
     def initialize(app, options = {})
@@ -59,12 +50,11 @@ module GoodJob
     end
 
     def respond(client, status, headers, body)
-      client.puts "HTTP/1.1 #{status}\r"
-      headers.each { |key, value| client.puts "#{key}: #{value}\r" }
-      client.puts "\r"
-      body.each { |part| client.puts part }
+      client.write "HTTP/1.1 #{status}\r\n"
+      headers.each { |key, value| client.write "#{key}: #{value}\r\n" }
+      client.write "\r\n"
+      body.each { |part| client.write part.to_s }
+      # client.write "\r\n"
     end
   end
 end
-
-Rack::Handler.register('httpserver', GoodJob::HttpServer)
