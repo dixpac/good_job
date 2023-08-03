@@ -10,25 +10,37 @@ module GoodJob
 
     def initialize(port:)
       @port = port
+      @running = Concurrent::AtomicBoolean.new(true)
     end
 
     def start
-      # @future = Concurrent::Future.new(args: [@handler, @port, GoodJob.logger]) do |thr_handler, thr_port, thr_logger|
-      #   thr_handler.run(self, Port: thr_port, Host: '0.0.0.0', Logger: thr_logger, AccessLog: [])
-      # end
-      # @future.add_observer(self.class, :task_observer)
-      # @future.execute
+      @server  = TCPServer.new(@port)
 
-      @handler = GoodJob::HttpServer.run(self, port: @port)
+      Thread.new do
+        while @running.value
+          client = @server.accept
+          begin
+            request = client.gets
+
+            status, headers, body = parse_request(request)
+            respond(client, status, headers, body)
+          rescue => e
+            respond(client, 500, { "Content-Type" => "text/plain"}, ["Internal Server Error"] )
+          ensure
+            client.close
+          end
+        end
+        @server.close
+      end
     end
 
     def running?
-      @handler&.running?
+      @running.value
     end
 
     def stop
-      @handler.stop if @handler
-      @future&.value # wait for Future to exit
+      @running.value = false
+      # @future&.value # wait for Future to exit
     end
 
     def call(env)
@@ -45,6 +57,22 @@ module GoodJob
       else
         [404, {}, ["Not found"]]
       end
+    end
+
+    private
+
+    def parse_request(request)
+      method, full_path = request.split(' ')
+      path, query = full_path.split('?')
+
+      call({ 'REQUEST_METHOD' => method, 'PATH_INFO' => path, 'QUERY_STRING' => query || '' })
+    end
+
+    def respond(client, status, headers, body)
+      client.write "HTTP/1.1 #{status}\r\n"
+      headers.each { |key, value| client.write "#{key}: #{value}\r\n" }
+      client.write "\r\n"
+      body.each { |part| client.write part.to_s }
     end
   end
 end
