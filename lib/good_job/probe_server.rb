@@ -24,7 +24,8 @@ module GoodJob
     end
 
     def running?
-      @handler&.instance_variable_get(:@server)&.status == :Running
+      debugger
+      @handler&.running?
     end
 
     def stop
