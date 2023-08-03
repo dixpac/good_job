@@ -2,8 +2,6 @@
 
 module GoodJob
   class ProbeServer
-    RACK_SERVER = 'httpserver'
-
     def self.task_observer(time, output, thread_error) # rubocop:disable Lint/UnusedMethodArgument
       return if thread_error.is_a? Concurrent::CancelledOperationError
 
@@ -15,7 +13,6 @@ module GoodJob
     end
 
     def start
-      # @handler = Rack::Handler.get(RACK_SERVER)
       # @future = Concurrent::Future.new(args: [@handler, @port, GoodJob.logger]) do |thr_handler, thr_port, thr_logger|
       #   thr_handler.run(self, Port: thr_port, Host: '0.0.0.0', Logger: thr_logger, AccessLog: [])
       # end
