@@ -69,6 +69,7 @@ module GoodJob
     end
 
     def respond(client, status, headers, body)
+      sleep 10
       client.write "HTTP/1.1 #{status}\r\n"
       headers.each { |key, value| client.write "#{key}: #{value}\r\n" }
       client.write "\r\n"
