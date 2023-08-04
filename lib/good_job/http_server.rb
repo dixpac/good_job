@@ -9,16 +9,18 @@ module GoodJob
       @running.make_true
       @server = TCPServer.new('0.0.0.0', port)
 
-      while @running.true?
-        client = @server.accept
-        begin
-          request = client.gets
-          status, headers, body = app.call(parse_request(request))
-          respond(client, status, headers, body)
-        rescue => e
-          respond(client, 500, { "Content-Type" => "text/plain" }, ["Internal Server Error"])
-        ensure
-          client.close
+      Thread.new do
+        while @running.true?
+          client = @server.accept
+          begin
+            request = client.gets
+            status, headers, body = app.call(parse_request(request))
+            respond(client, status, headers, body)
+          rescue => e
+            respond(client, 500, { "Content-Type" => "text/plain" }, ["Internal Server Error"])
+          ensure
+            client.close
+          end
         end
       end
     end
