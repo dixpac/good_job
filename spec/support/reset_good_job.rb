@@ -34,6 +34,7 @@ RSpec.configure do |config|
     )
     GoodJob._shutdown_all(executables, timeout: -1)
 
+    puts THREAD_ERRORS.inspect
     expect(THREAD_ERRORS).to be_empty
 
     expect(GoodJob::Notifier.instances).to all be_shutdown

@@ -10,37 +10,24 @@ module GoodJob
 
     def initialize(port:)
       @port = port
-      @running = Concurrent::AtomicBoolean.new(true)
     end
 
     def start
-      @server  = TCPServer.new(@port)
-
-      Thread.new do
-        while @running.value
-          client = @server.accept
-          begin
-            request = client.gets
-
-            status, headers, body = parse_request(request)
-            respond(client, status, headers, body)
-          rescue => e
-            respond(client, 500, { "Content-Type" => "text/plain"}, ["Internal Server Error"] )
-          ensure
-            client.close
-          end
-        end
-        @server.close
+      @handler = HttpServer.new
+      @future = Concurrent::Future.new(args: [@handler, @port]) do |thr_handler, thr_port|
+        thr_handler.run(self, thr_port)
       end
+      @future.add_observer(self.class, :task_observer)
+      @future.execute
     end
 
     def running?
-      @running.value
+      @handler&.running?
     end
 
     def stop
-      @running.value = false
-      # @future&.value # wait for Future to exit
+      @handler&.stop
+      @future&.value # wait for Future to exit
     end
 
     def call(env)
