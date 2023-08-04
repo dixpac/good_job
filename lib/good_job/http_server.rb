@@ -5,29 +5,42 @@ module GoodJob
       @running = Concurrent::AtomicBoolean.new(false)
     end
 
+
     def run(app, port)
       @running.make_true
-      @server = TCPServer.new('0.0.0.0', port)
+      begin
+        @server = TCPServer.new('0.0.0.0', port)
+      rescue StandardError => e
+        puts "Failed to start server: #{e}"
+        @running.make_false
+        return
+      end
 
-      Thread.new do
+      begin
         while @running.true?
-          client = @server.accept
-          begin
-            request = client.gets
-            status, headers, body = app.call(parse_request(request))
-            respond(client, status, headers, body)
-          rescue => e
-            respond(client, 500, { "Content-Type" => "text/plain" }, ["Internal Server Error"])
-          ensure
-            client.close
-          end
+          ready_sockets, _, _ = IO.select([@server], nil, nil, 0.1)
+          next unless ready_sockets
+
+          client = @server.accept_nonblock
+          request = client.gets
+          status, headers, body = app.call(parse_request(request))
+          respond(client, status, headers, body)
+          client.close
         end
+      rescue IO::WaitReadable, Errno::EINTR
+        retry
+      rescue => e
+        puts "Server encountered an error: #{e}"
+      ensure
+        @server.close if @server
+        @running.make_false
       end
     end
 
     def stop
       @running.make_false
       @server&.close
+      @server = nil
     end
 
     def running?
