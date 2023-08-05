@@ -13,10 +13,8 @@ module GoodJob
     end
 
     def start
-      @handler = HttpServer.new
-      @future = Concurrent::Future.new(args: [@handler, @port, GoodJob.logger]) do |thr_handler, thr_port, thr_logger|
-        thr_handler.run(self, thr_port, thr_logger)
-      end
+      @handler = HttpServer.new(self, port: @port, logger: GoodJob.logger)
+      @future = Concurrent::Future.new { @handler.run }
       @future.add_observer(self.class, :task_observer)
       @future.execute
     end

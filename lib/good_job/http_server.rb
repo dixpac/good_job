@@ -1,47 +1,28 @@
+# frozen_string_literal: true
+
 module GoodJob
   class HttpServer
-    def initialize
-      @server = nil
+    def initialize(app, options = {})
+      @app    = app
+      @port   = options[:port]
+      @logger = options[:logger]
+
       @running = Concurrent::AtomicBoolean.new(false)
     end
 
-    def run(app, port, logger)
+    def run
       @running.make_true
-      begin
-        @server = TCPServer.new('0.0.0.0', port)
-      rescue StandardError => e
-        logger.error "Server encountered an error: #{e}"
-        @running.make_false
-        return
-      end
-
-      begin
-        while @running.true?
-          ready_sockets, _, _ = IO.select([@server], nil, nil, 0.1)
-          next unless ready_sockets
-
-          client = @server.accept_nonblock(exception: false)
-          request = client.gets
-          status, headers, body = app.call(parse_request(request))
-          respond(client, status, headers, body)
-          client.close
-        end
-      rescue IO::WaitReadable, Errno::EINTR
-        retry
-      rescue Errno::EBADF
-        # Do nothing
-      rescue StandardError => e
-        logger.error "Server encountered an error: #{e}"
-      ensure
-        @server.close if @server
-        @running.make_false
-      end
+      start_server
+      handle_connections if @running.true?
+    rescue StandardError => e
+      @logger.error "Server encountered an error: #{e}"
+    ensure
+      stop
     end
 
     def stop
       @running.make_false
       @server&.close
-      @server = nil
     end
 
     def running?
@@ -49,6 +30,32 @@ module GoodJob
     end
 
     private
+
+    def start_server
+      @server = TCPServer.new('0.0.0.0', @port)
+    rescue StandardError => e
+      @logger.error "Failed to start server: #{e}"
+      @running.make_false
+    end
+
+    def handle_connections
+      while @running.true?
+        begin
+          ready_sockets, _, _ = IO.select([@server])
+          return unless ready_sockets
+
+          client = @server.accept_nonblock(exception: false)
+          request = client.gets
+
+          status, headers, body = @app.call(parse_request(request))
+          respond(client, status, headers, body)
+
+          client.close
+        rescue IO::WaitReadable, Errno::EINTR
+          retry
+        end
+      end
+    end
 
     def parse_request(request)
       method, full_path = request.split(' ')
