@@ -41,7 +41,7 @@ module GoodJob
     def handle_connections
       while @running.true?
         begin
-          ready_sockets, _, _ = IO.select([@server])
+          ready_sockets, = IO.select([@server])
           return unless ready_sockets
 
           client = @server.accept_nonblock(exception: false)
@@ -58,7 +58,7 @@ module GoodJob
     end
 
     def parse_request(request)
-      method, full_path = request.split(' ')
+      method, full_path = request.split
       path, query = full_path.split('?')
       { 'REQUEST_METHOD' => method, 'PATH_INFO' => path, 'QUERY_STRING' => query || '' }
     end

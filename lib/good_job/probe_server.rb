@@ -43,22 +43,5 @@ module GoodJob
         [404, {}, ["Not found"]]
       end
     end
-
-    private
-
-    def parse_request(request)
-      method, full_path = request.split(' ')
-      path, query = full_path.split('?')
-
-      call({ 'REQUEST_METHOD' => method, 'PATH_INFO' => path, 'QUERY_STRING' => query || '' })
-    end
-
-    def respond(client, status, headers, body)
-      sleep 10
-      client.write "HTTP/1.1 #{status}\r\n"
-      headers.each { |key, value| client.write "#{key}: #{value}\r\n" }
-      client.write "\r\n"
-      body.each { |part| client.write part.to_s }
-    end
   end
 end
